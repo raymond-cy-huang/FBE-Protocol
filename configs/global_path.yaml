@@ -1,0 +1,33 @@
+# Global path profiles used by task scripts.
+#
+# Profile naming convention:
+# - fbe_extract_multi_masks_path00: repo-local default profile.
+# - fbe_extract_multi_masks_path01: external/current experiment profile.
+# - Add path02, path03, ... for additional input/output pairs.
+
+# 00 keeps a review-friendly folder structure and writes both outputs:
+# results/fbe_extract_multi_masks/{image_name}/{image_name}_mask.png
+# results/fbe_extract_multi_masks/{image_name}/{image_name}_combine.png
+fbe_extract_multi_masks_path00:
+  # Default local test folder.
+  input_dir: images
+  output_dir: results
+
+  # task: results/fbe_extract_multi_masks/{image_name}/...
+  # direct: results/{image_name}/...
+  output_layout: task
+
+  # full: write mask + combine
+  # mask_only: write mask only
+  output_mode: full
+
+# 01 is a flat bulk-output template for downstream experiments.
+# Fill in input_dir/output_dir when using it:
+# {output_dir}/{image_name}_mask.png
+# No task folder, no per-image folder, no combine image.
+fbe_extract_multi_masks_path01:
+  # Current external test folders.
+  # input_dir: your_input_folder
+  # output_dir: your_output_folder
+  output_layout: direct
+  output_mode: mask_only
