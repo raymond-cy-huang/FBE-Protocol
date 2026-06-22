@@ -7,6 +7,7 @@ import numpy as np
 
 from .config import MaskConfig
 from .result import MaskResult
+from .variants import build_mask_variants
 
 
 def _to_bgr(img: np.ndarray) -> np.ndarray:
@@ -209,12 +210,24 @@ def _extract_from_mask(
             "boundary_erode_iter": int(config.boundary_erode_iter),
             "boundary_dilate_kernel": "3x3 square",
             "boundary_dilate_iter": int(config.boundary_dilate_iter),
+            "variant_enabled": config.variant_erode_iter >= 0 and config.variant_dilate_iter >= 0,
+            "variant_kernel": f"{config.variant_kernel_size}x{config.variant_kernel_size} ellipse",
+            "variant_erode_iter": int(config.variant_erode_iter),
+            "variant_dilate_iter": int(config.variant_dilate_iter),
             "output_dtype": "uint8",
             "output_values": "{0,255}",
             "foreground_value": 255,
             "background_value": 0,
         }
     )
+    variants = {}
+    if config.variant_erode_iter >= 0 and config.variant_dilate_iter >= 0:
+        variants = build_mask_variants(
+            mask,
+            erode_iter=config.variant_erode_iter,
+            dilate_iter=config.variant_dilate_iter,
+            kernel_size=config.variant_kernel_size,
+        ).as_dict()
 
     foreground = None
     background = None
@@ -231,6 +244,7 @@ def _extract_from_mask(
         mask=mask,
         foreground=foreground,
         background=background,
+        mask_variants=variants,
         metadata=metadata,
         warnings=result_warnings,
     )

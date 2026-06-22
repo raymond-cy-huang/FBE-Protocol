@@ -33,3 +33,9 @@ class MaskConfig:
     boundary_close_kernel: int = 0
     boundary_erode_iter: int = 1
     boundary_dilate_iter: int = 1
+
+    # Mask sensitivity variants. With a 3x3 kernel, 5 iterations approximate
+    # a 5-pixel inward/outward boundary perturbation.
+    variant_kernel_size: int = 3
+    variant_erode_iter: int = 5
+    variant_dilate_iter: int = 5

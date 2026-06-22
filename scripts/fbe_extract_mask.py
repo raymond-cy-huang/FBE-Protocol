@@ -137,6 +137,8 @@ def build_config(args: argparse.Namespace) -> MaskConfig:
         boundary_close_kernel=args.close,
         boundary_erode_iter=args.erode,
         boundary_dilate_iter=args.dilate,
+        variant_erode_iter=args.variant_px,
+        variant_dilate_iter=args.variant_px,
     )
 
 
@@ -161,6 +163,10 @@ def extract_from_mask_file(
     write_image(output_path, result.mask)
     if args.output_mode == "full":
         write_image(combine_path, make_combine(image, result.mask))
+        for variant_name, variant_mask in result.mask_variants.items():
+            if variant_name == "original":
+                continue
+            write_image(image_result_dir / f"{stem}_mask_{variant_name}.png", variant_mask)
 
     print(f"[OK] {image_path.stem} -> {output_path} unique={np.unique(result.mask).tolist()}")
 
@@ -188,6 +194,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--close", type=int, default=0)
     parser.add_argument("--erode", type=int, default=1)
     parser.add_argument("--dilate", type=int, default=1)
+    parser.add_argument(
+        "--variant-px",
+        type=int,
+        default=5,
+        help="Pixel radius for eroded/dilated mask variants. Use -1 to disable variant outputs.",
+    )
     return parser.parse_args()
 
 

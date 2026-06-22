@@ -57,6 +57,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--close", type=int, default=0)
     parser.add_argument("--erode", type=int, default=1)
     parser.add_argument("--dilate", type=int, default=1)
+    parser.add_argument(
+        "--variant-px",
+        type=int,
+        default=5,
+        help="Pixel radius for eroded/dilated mask variants. Use -1 to disable variant outputs.",
+    )
     args = parser.parse_args()
 
     section = config.get(args.path_profile, {})

@@ -85,6 +85,22 @@ choose_from_list() {
     done
 }
 
+read_variant_px_default() {
+    local prompt="$1"
+    local default_value="$2"
+    local value
+
+    while true; do
+        read -r -p "${prompt} [${default_value}]: " value
+        value="${value:-${default_value}}"
+        if [[ "${value}" == "-1" || "${value}" =~ ^[0-9]+$ ]]; then
+            printf '%s\n' "${value}"
+            return 0
+        fi
+        echo "Invalid value. Please enter -1 or a non-negative integer." >&2
+    done
+}
+
 main() {
     shopt -s nullglob
 
@@ -118,6 +134,8 @@ main() {
     output_layout="$(read_config_value "${profile}" output_layout task)"
     local output_mode
     output_mode="$(read_config_value "${profile}" output_mode full)"
+    local variant_px
+    variant_px="$(read_variant_px_default "Mask variant radius in pixels (erode/dilate, -1 disables variants)" 5)"
 
     if [[ "${task_name}" == "fbe_extract_multi_masks.py" ]]; then
         local multi_output
@@ -129,8 +147,9 @@ main() {
         echo "[INFO] Input  : $(resolve_repo_path "${image_dir}")"
         echo "[INFO] Output : ${multi_output}"
         echo "[INFO] Mode   : ${output_mode}"
+        echo "[INFO] Variant radius: ${variant_px}"
         echo "[INFO] Running ${task_name}"
-        exec "${PYTHON_BIN}" "${task}" --path-profile "${profile}"
+        exec "${PYTHON_BIN}" "${task}" --path-profile "${profile}" --variant-px "${variant_px}"
     fi
 
     local resolved_image_dir
@@ -161,8 +180,9 @@ main() {
     echo "[INFO] Output: ${resolved_output_dir}"
     echo "[INFO] Profile: ${profile}"
     echo "[INFO] Mode  : ${output_mode}"
+    echo "[INFO] Variant radius: ${variant_px}"
     echo "[INFO] Running ${task_name} on $(basename "${image}")"
-    exec "${PYTHON_BIN}" "${task}" "${image}" --output-dir "${resolved_output_dir}" --output-layout "${output_layout}" --output-mode "${output_mode}"
+    exec "${PYTHON_BIN}" "${task}" "${image}" --output-dir "${resolved_output_dir}" --output-layout "${output_layout}" --output-mode "${output_mode}" --variant-px "${variant_px}"
 }
 
 main "$@"
