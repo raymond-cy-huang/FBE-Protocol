@@ -8,11 +8,13 @@ CONFIG_PATH="${REPO_ROOT}/configs/global_path.yaml"
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 read_profile_keys() {
-    "${PYTHON_BIN}" - "${CONFIG_PATH}" <<'PY'
+    local prefix="$1"
+    "${PYTHON_BIN}" - "${CONFIG_PATH}" "${prefix}" <<'PY'
 import sys
 from pathlib import Path
 
 path = Path(sys.argv[1])
+prefix = sys.argv[2]
 try:
     import yaml
 except ImportError:
@@ -23,7 +25,7 @@ if not path.exists():
 data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 if not isinstance(data, dict):
     raise SystemExit(0)
-for key in sorted(k for k in data if k.startswith("fbe_extract_multi_masks_path")):
+for key in sorted(k for k in data if k.startswith(prefix)):
     print(key)
 PY
 }
@@ -101,6 +103,38 @@ read_variant_px_default() {
     done
 }
 
+read_float_default() {
+    local prompt="$1"
+    local default_value="$2"
+    local value
+
+    while true; do
+        read -r -p "${prompt} [${default_value}]: " value
+        value="${value:-${default_value}}"
+        if [[ "${value}" =~ ^-?[0-9]+([.][0-9]+)?$ ]]; then
+            printf '%s\n' "${value}"
+            return 0
+        fi
+        echo "Invalid value. Please enter a number." >&2
+    done
+}
+
+read_choice_default() {
+    local prompt="$1"
+    local default_value="$2"
+    local value
+
+    while true; do
+        read -r -p "${prompt} [${default_value}]: " value
+        value="${value:-${default_value}}"
+        if [[ "${value}" == "foreground" || "${value}" == "background" ]]; then
+            printf '%s\n' "${value}"
+            return 0
+        fi
+        echo "Invalid value. Please enter foreground or background." >&2
+    done
+}
+
 main() {
     shopt -s nullglob
 
@@ -120,9 +154,16 @@ main() {
     echo
     cd "${REPO_ROOT}"
 
-    mapfile -t profiles < <(read_profile_keys)
+    local profile_prefix
+    if [[ "${task_name}" == "fbe_background_swapping.py" ]]; then
+        profile_prefix="fbe_background_swapping"
+    else
+        profile_prefix="fbe_extract_multi_masks_path"
+    fi
+
+    mapfile -t profiles < <(read_profile_keys "${profile_prefix}")
     if ((${#profiles[@]} == 0)); then
-        profiles=("fbe_extract_multi_masks_path00")
+        profiles=("${profile_prefix}00")
     fi
     local profile
     profile="$(choose_from_list "Which path profile do you want to use?" "${profiles[@]}")"
@@ -134,8 +175,52 @@ main() {
     output_layout="$(read_config_value "${profile}" output_layout task)"
     local output_mode
     output_mode="$(read_config_value "${profile}" output_mode full)"
+    local variant_px_default
+    variant_px_default="$(read_config_value "${profile}" variant_px 5)"
     local variant_px
-    variant_px="$(read_variant_px_default "Mask variant radius in pixels (erode/dilate, -1 disables variants)" 5)"
+    variant_px="$(read_variant_px_default "Mask variant radius in pixels (erode/dilate, -1 disables variants)" "${variant_px_default}")"
+
+    if [[ "${task_name}" == "fbe_background_swapping.py" ]]; then
+        local dataset_root
+        dataset_root="$(read_config_value "${profile}" dataset_root "")"
+        local resolved_output_dir
+        resolved_output_dir="$(resolve_repo_path "${output_dir}")"
+        local mask_region
+        mask_region="$(read_choice_default "Mask region for IoU pairing (foreground/background)" "$(read_config_value "${profile}" mask_region background)")"
+        local min_iou
+        min_iou="$(read_float_default "Minimum IoU threshold (-1 disables pruning threshold)" "$(read_config_value "${profile}" min_iou -1)")"
+        local max_pairs
+        max_pairs="$(read_variant_px_default "Max pairs" "$(read_config_value "${profile}" max_pairs 20)")"
+        local anchor_count
+        anchor_count="$(read_variant_px_default "Anchor count (0 disables anchor mode)" "$(read_config_value "${profile}" anchor_count 10)")"
+        local pair_mask_size
+        pair_mask_size="$(read_variant_px_default "Pair mask size" "$(read_config_value "${profile}" pair_mask_size 128)")"
+
+        echo "[INFO] Profile: ${profile}"
+        if [[ -n "${dataset_root}" ]]; then
+            echo "[INFO] Dataset: ${dataset_root}"
+        else
+            echo "[INFO] Images : $(resolve_repo_path "${image_dir}")"
+            echo "[INFO] Masks  : $(resolve_repo_path "$(read_config_value "${profile}" mask_dir results/fbe_extract_multi_masks)")"
+        fi
+        local swap_output
+        swap_output="${resolved_output_dir}"
+        if [[ "${output_layout}" == "task" ]]; then
+            swap_output="${swap_output}/${task_stem}"
+        fi
+        echo "[INFO] Output : ${swap_output}"
+        echo "[INFO] IoU    : region=${mask_region}, min=${min_iou}, max_pairs=${max_pairs}, anchors=${anchor_count}"
+        echo "[INFO] Variant radius: ${variant_px}"
+        echo "[INFO] Running ${task_name}"
+        exec "${PYTHON_BIN}" "${task}" \
+            --path-profile "${profile}" \
+            --mask-region "${mask_region}" \
+            --min-iou "${min_iou}" \
+            --max-pairs "${max_pairs}" \
+            --anchor-count "${anchor_count}" \
+            --pair-mask-size "${pair_mask_size}" \
+            --variant-px "${variant_px}"
+    fi
 
     if [[ "${task_name}" == "fbe_extract_multi_masks.py" ]]; then
         local multi_output

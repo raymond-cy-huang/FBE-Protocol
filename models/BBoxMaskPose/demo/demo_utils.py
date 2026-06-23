@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -20,6 +21,12 @@ from mmengine.structures import InstanceData
 from pycocotools import mask as Mask
 from sam2.distinctipy import get_colors
 from tqdm import tqdm
+
+FBE_REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(FBE_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(FBE_REPO_ROOT))
+
+from fbe_protocol.mask.background_transform import BackgroundTransformConfig, apply_background_transform
 
 ### Visualization hyperparameters
 MIN_CONTOUR_AREA: int = 50
@@ -450,87 +457,25 @@ def visualize_itteration(
 
     # ------------------------------------------------------------
     # 2) Compose background-transformed outputs.
-    #    Supported modes: white / black / mean / median / blur / gray
-    #    Control: BMP_BG_MODE
     # ------------------------------------------------------------
-    mode = os.getenv("BMP_BG_MODE", "white").strip().lower()
-    if mode not in ("white", "black", "mean", "median", "mode", "blur", "gray"):
-        mode = "white"
+    bg_config = BackgroundTransformConfig.from_env()
+    transform = apply_background_transform(img_u8, fore_mask, bg_config)
+    mode = transform.metadata["mode"]
+    fg_img = transform.foreground
+    bg_img = transform.background
 
-    def _bg_stat_mask(mask_bool: np.ndarray) -> np.ndarray:
-        """Use erosion for background statistics to reduce foreground edge leakage."""
-        k = int(os.getenv("BMP_BG_ERODE_K", "31"))
-        k = max(3, k | 1)
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k, k))
-        m = (mask_bool.astype(np.uint8) * 255)
-        er = cv2.erode(m, kernel, iterations=1) > 0
-        if int(er.sum()) < 256:
-            return mask_bool
-        return er
-
-    # Foreground is preserved; only the background is transformed.
-    fg_img = img_u8.copy()
-
-    if mode in ("white", "black", "mean", "median", "mode"):
-        # Estimate representative colors from the background region.
-        if mode == "white":
-            fill_rgb = np.array([255, 255, 255], dtype=np.uint8)
-        elif mode == "black":
-            fill_rgb = np.array([0, 0, 0], dtype=np.uint8)
-        else:
-            stat_mask = _bg_stat_mask(back_mask)
-            bg_pixels = img_u8[stat_mask]  # (N,3)
-            if bg_pixels.size == 0:
-                bg_pixels = img_u8[back_mask] if back_mask.any() else img_u8.reshape(-1, 3)
-
-            if mode == "mean":
-                fill_rgb = np.clip(bg_pixels.mean(axis=0), 0, 255).astype(np.uint8)
-            elif mode == "median":
-                fill_rgb = np.clip(np.median(bg_pixels, axis=0), 0, 255).astype(np.uint8)
-            else:  # mode == "mode"
-                fill_rgb = _quantized_mode_color(bg_pixels)
-                print("[TAG], is \"Mode\" color:", fill_rgb)
-
-            # Optional numeric output for inspecting background color statistics.
-            try:
-                base = f"{img_name}_iter{iteration_idx + 1}"
-                with open(os.path.join(output_root, f"{base}_bg_{mode}_rgb.txt"), "w") as f:
-                    f.write(
-                        f"mode={mode}\n"
-                        f"fill_rgb={fill_rgb.tolist()}\n"
-                        f"N={int(bg_pixels.shape[0])}\n"
-                        f"bins={int(os.getenv('BMP_BG_MODE_BINS','32'))}\n"
+    if transform.fill_rgb is not None and mode not in ("white", "black"):
+        try:
+            base = f"{img_name}_iter{iteration_idx + 1}"
+            with open(os.path.join(output_root, f"{base}_bg_{mode}_rgb.txt"), "w") as f:
+                f.write(
+                    f"mode={mode}\n"
+                    f"fill_rgb={transform.fill_rgb.tolist()}\n"
+                    f"N={int(transform.metadata.get('background_pixel_count', 0))}\n"
+                    f"bins={int(transform.metadata.get('mode_bins', bg_config.mode_bins))}\n"
                 )
-            except Exception:
-                pass
-
-        # Fill only the background region.
-        fg_img[back_mask] = fill_rgb
-
-        # Visualization image: keep background, fill the foreground hole.
-        bg_img = np.tile(fill_rgb.reshape(1, 1, 3), (H, W, 1))
-        bg_img[back_mask] = img_u8[back_mask]
-
-    elif mode == "blur":
-        # Blur the full image first, then copy only the background area.
-        k = int(os.getenv("BMP_BG_BLUR_K", "31"))
-        k = max(3, k | 1)
-        blurred = cv2.GaussianBlur(img_u8, (k, k), 0)
-        fg_img[back_mask] = blurred[back_mask]
-
-        # Visualization image: keep blurred background, fill the foreground hole.
-        bg_img = np.full((H, W, 3), 255, dtype=np.uint8)
-        bg_img[back_mask] = blurred[back_mask]
-
-    else:  # mode == "gray"
-        # Convert the full image to grayscale, then copy only the background area.
-        gray1 = cv2.cvtColor(img_u8, cv2.COLOR_BGR2GRAY)
-        gray3 = cv2.cvtColor(gray1, cv2.COLOR_GRAY2BGR)
-        fg_img[back_mask] = gray3[back_mask]
-
-        # Visualization image: keep grayscale background, fill the foreground hole.
-        bg_img = np.full((H, W, 3), 255, dtype=np.uint8)
-        bg_img[back_mask] = gray3[back_mask]
+        except Exception:
+            pass
 
     # ------------------------------------------------------------
     # 2.5) Save
@@ -937,59 +882,6 @@ def compute_oks(gt: Dict[str, Any], dt: Dict[str, Any], use_area: bool = True, p
         oks = np.sum(np.exp(-e)) / e.shape[0]
 
     return oks
-
-
-def _quantized_mode_color(bg_pixels: np.ndarray) -> np.ndarray: 
-    """
-    Compute a robust mode color by per-channel quantization.
-    bg_pixels: (N,3) uint8
-    Return: (3,) uint8 (BGR/RGB follows input ordering; here it follows img_u8 indexing)
-    """
-    if bg_pixels.size == 0:
-        return np.array([255, 255, 255], dtype=np.uint8)
-
-    # Optional sampling for speed
-    sample_max = int(os.getenv("BMP_BG_MODE_SAMPLE_MAX", "300000"))
-    if bg_pixels.shape[0] > sample_max:
-        rng = np.random.default_rng(12345)  # deterministic
-        idx = rng.choice(bg_pixels.shape[0], size=sample_max, replace=False)
-        bg_pixels = bg_pixels[idx]
-
-    bins = int(os.getenv("BMP_BG_MODE_BINS", "32"))
-    bins = max(2, min(256, bins))
-    bin_size = 256 // bins
-    if bin_size < 1:
-        bin_size = 1
-        bins = 256
-
-    # Quantize each channel
-    q = (bg_pixels // bin_size).astype(np.int32)  # (N,3) in [0, bins-1]
-
-    # Encode 3D bin to 1D code for counting
-    code = q[:, 0] * (bins * bins) + q[:, 1] * bins + q[:, 2]  # (N,)
-
-    # Find most frequent bin
-    uniq, counts = np.unique(code, return_counts=True)
-    best_code = int(uniq[np.argmax(counts)])
-
-    # Decode bin
-    qb0 = best_code // (bins * bins)
-    rem = best_code % (bins * bins)
-    qb1 = rem // bins
-    qb2 = rem % bins
-
-    # Use mean color of pixels in that bin (more stable than bin center)
-    in_bin = (q[:, 0] == qb0) & (q[:, 1] == qb1) & (q[:, 2] == qb2)
-    if not np.any(in_bin):
-        # Fallback to bin center if something went wrong
-        center = np.array(
-            [(qb0 + 0.5) * bin_size, (qb1 + 0.5) * bin_size, (qb2 + 0.5) * bin_size],
-            dtype=np.float32,
-        )
-        return np.clip(center, 0, 255).astype(np.uint8)
-
-    fill = bg_pixels[in_bin].mean(axis=0)
-    return np.clip(fill, 0, 255).astype(np.uint8)
 
 
 def _build_foreground_mask(detections: Any, height: int, width: int) -> np.ndarray:

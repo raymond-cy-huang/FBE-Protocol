@@ -33,10 +33,11 @@ def list_debug_files(directory: Path) -> str:
 
 
 def run_bmp_demo(repo_dir: Path, python_bin: Path, image_path: Path) -> None:
+    project_root = repo_dir.parent.parent
     env = {
         **os.environ,
         "BMP_BG_MODE": "black",
-        "PYTHONPATH": f"{repo_dir}:{os.environ.get('PYTHONPATH', '')}",
+        "PYTHONPATH": f"{project_root}:{repo_dir}:{os.environ.get('PYTHONPATH', '')}",
     }
     command = [
         str(python_bin),

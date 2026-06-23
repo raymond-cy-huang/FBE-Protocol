@@ -31,3 +31,38 @@ fbe_extract_multi_masks_path01:
   # output_dir: your_output_folder
   output_layout: direct
   output_mode: mask_only
+
+# Background swapping profiles.
+#
+# dataset_root mode expects:
+# {dataset_root}/gt_mix_gender
+# {dataset_root}/gt_female_mask
+# {dataset_root}/gt_male_mask
+#
+# Output should stay task-scoped; per-run parameters belong in run metadata,
+# not in folder names.
+fbe_background_swapping01:
+  dataset_root: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/_normalized_dataset
+  output_dir: results
+  output_layout: task
+
+  # Pairing defaults.
+  mask_region: background
+  min_iou: -1
+  anchor_count: 10
+  max_pairs: 20
+  pair_mask_size: 128
+  variant_px: -1
+
+fbe_background_swapping02:
+  # dataset_root: /path/to/normalized_dataset
+  output_dir: results
+  output_layout: task
+
+  # Pairing defaults.
+  mask_region: background
+  min_iou: -1
+  anchor_count: 10
+  max_pairs: 20
+  pair_mask_size: 128
+  variant_px: -1
