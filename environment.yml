@@ -7,17 +7,17 @@ channels:
 dependencies:
   - python=3.10
   - pip
-  - numpy<2
+  - numpy=1.26.4
   - opencv
   - pillow
   - pyyaml
   - tqdm
-  - scikit-image>=0.20
-  - pytorch
-  - torchvision
+  - scikit-image=0.25.2
+  - pytorch=2.4.0
+  - torchvision=0.19.0
   - pip:
       - openmim
-      - lpips
+      - lpips==0.1.4
       - onnx
       - onnxruntime
       - insightface
