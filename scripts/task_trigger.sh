@@ -157,6 +157,8 @@ main() {
     local profile_prefix
     if [[ "${task_name}" == "fbe_background_swapping.py" ]]; then
         profile_prefix="fbe_background_swapping"
+    elif [[ "${task_name}" == "run_copy_paste_composition.py" ]]; then
+        profile_prefix="copy_paste_composition_path"
     else
         profile_prefix="fbe_extract_multi_masks_path"
     fi
@@ -175,6 +177,20 @@ main() {
     output_layout="$(read_config_value "${profile}" output_layout task)"
     local output_mode
     output_mode="$(read_config_value "${profile}" output_mode full)"
+
+    if [[ "${task_name}" == "run_copy_paste_composition.py" ]]; then
+        local dataset_root
+        dataset_root="$(read_config_value "${profile}" dataset_root "")"
+        local resolved_output_dir
+        resolved_output_dir="$(resolve_repo_path "${output_dir}")"
+
+        echo "[INFO] Profile: ${profile}"
+        echo "[INFO] Dataset: ${dataset_root}"
+        echo "[INFO] Output : ${resolved_output_dir}"
+        echo "[INFO] Running ${task_name}"
+        exec "${PYTHON_BIN}" "${task}" --path-profile "${profile}"
+    fi
+
     local variant_px_default
     variant_px_default="$(read_config_value "${profile}" variant_px 5)"
     local variant_px

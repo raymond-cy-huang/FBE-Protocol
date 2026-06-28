@@ -22,6 +22,7 @@ FBE-Protocol/
 +-- scripts/
 |   +-- fbe_extract_mask.py       # Single-image mask extraction
 |   +-- fbe_extract_multi_masks.py # Folder/batch mask extraction
+|   +-- run_copy_paste_composition.py # Copy-Paste baseline
 |   +-- task_trigger.sh           # Interactive script launcher
 +-- environment.yml
 +-- setup.sh
@@ -143,6 +144,19 @@ bash scripts/task_trigger.sh
 
 The launcher lists available scripts under `scripts/`, then lists path profiles
 from `configs/global_path.yaml`.
+
+### Copy-Paste Composition Baseline
+
+Generate the diagnostic Copy-Paste baseline:
+
+```bash
+python scripts/run_copy_paste_composition.py --path-profile copy_paste_composition_path01
+```
+
+The dataset root and output folder are configured in
+`configs/global_path.yaml` under `copy_paste_composition_path01`. This writes
+method/gender groups under the configured output folder using `*_cp.png`
+filenames, plus `copy_paste_manifest.csv`.
 
 ## Update Paths and Configs
 

@@ -66,3 +66,70 @@ fbe_background_swapping02:
   max_pairs: 20
   pair_mask_size: 128
   variant_px: -1
+
+# Alpha blending profiles.
+#
+# Mode A: image + mask/soft_mask
+# - image: original image. The task splits it into foreground/background first.
+# - mask: hard foreground mask; alpha_blending.py creates a soft mask from it.
+# - soft_mask: optional precomputed soft foreground mask. Use either mask or soft_mask.
+#
+# Mode B: foreground + background + mask/soft_mask
+# - foreground/background: explicit images to merge with the soft mask.
+# - mask/soft_mask: same meaning as above.
+alpha_blending_path00:
+  image: images/15881.png
+  mask: results/fbe_extract_mask/15881/15881_mask.png
+  output_dir: results/alpha_blending
+  output_layout: task
+  output_mode: full
+  kernel_size: 31
+  sigma: 10
+  save_soft_mask: true
+
+alpha_blending_path01:
+  # image: /path/to/original.png
+  # foreground: /path/to/foreground.png
+  # background: /path/to/background.png
+  # mask: /path/to/hard_mask.png
+  # soft_mask: /path/to/soft_mask.png
+  output_dir: results/alpha_blending
+  output_layout: task
+  output_mode: blend_only
+  kernel_size: 31
+  sigma: 10
+  save_soft_mask: false
+
+alpha_blending_path02:
+  dataset_root: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/_normalized_dataset
+  output_dir: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/exper_12_alpha_blending
+  output_layout: direct
+  output_mode: blend_only
+  kernel_size: 31
+  sigma: 10
+  save_soft_mask: false
+
+# Split GT images into foreground/background images.
+split_bg_fg_path01:
+  dataset_root: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/_normalized_dataset
+  output_dir: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/exper_13_fg_empty_lama_inpainting
+  output_layout: direct
+  output_mode: bg_only
+  background_fill: transparent
+  genders:
+    - female
+    - male
+  refine_mask: false
+
+# Copy-Paste composition baseline.
+copy_paste_composition_path01:
+  dataset_root: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/_normalized_dataset
+  output_dir: /mnt/d/Ph.D/01_Experiments_GAN_Inv_Log/2026.03.08_All_Experiments_Start/exper_14_mask_copy_paste
+  methods:
+    - psp
+    - e4e
+    - pti
+  genders:
+    - female
+    - male
+  threshold: 127
