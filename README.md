@@ -13,6 +13,8 @@ pipeline in `fbe_protocol/mask`.
 FBE-Protocol/
 +-- configs/
 |   +-- global_path.yaml          # Input/output path profiles for scripts
++-- experiments/
+|   +-- metrics_test/             # Metric environment readiness smoke test
 +-- fbe_protocol/
 |   +-- mask/                     # Binary mask extraction package
 +-- images/                       # Default local input images
@@ -42,7 +44,8 @@ bash setup.sh
 2. Installs OpenMMLab dependencies with `mim`:
    `mmengine`, `mmcv==2.1.0`, `mmdet==3.3.0`, and `mmpretrain==1.2.0`.
 3. Installs BBoxMaskPose runtime dependencies.
-4. Downloads SAM checkpoints into:
+4. Installs optional metric dependencies for LPIPS and ID similarity.
+5. Downloads SAM checkpoints into:
    `models/BBoxMaskPose/models/SAM/`
 
 The default environment name is `fbe-protocol`.
@@ -157,6 +160,38 @@ The dataset root and output folder are configured in
 `configs/global_path.yaml` under `copy_paste_composition_path01`. This writes
 method/gender groups under the configured output folder using `*_cp.png`
 filenames, plus `copy_paste_manifest.csv`.
+
+### Metrics Tasker
+
+Compose metrics dynamically through `fbe_protocol.metrics`:
+
+```python
+from fbe_protocol.metrics import MetricsEnvChecker, MetricsTaskerBuilder
+
+MetricsEnvChecker().require(["psnr", "ssim", "lpips"])
+
+tasker = (
+    MetricsTaskerBuilder()
+    .add("psnr")
+    .add("rmse")
+    .add("mae")
+    .add("ssim")
+    .add("lpips", net="vgg")
+    .build()
+)
+
+scores = tasker.evaluate_pair("reference.png", "prediction.png")
+```
+
+Available metrics are `psnr`, `rmse`, `mae`, `ssim`, `lpips`, and
+`id_similarity` (`id` is accepted as an alias).
+
+Run the full metrics readiness experiment with paths from
+`configs/global_path.yaml`:
+
+```bash
+python experiments/metrics_test/run_metrics_test.py --path-profile metrics_test_path00
+```
 
 ## Update Paths and Configs
 

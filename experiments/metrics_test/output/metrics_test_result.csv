@@ -1,0 +1,7 @@
+metric,dependency_ready,run_status,score,error,traceback
+id_similarity,True,passed,-0.01661960780620575,,
+lpips,True,passed,0.6252373456954956,,
+mae,True,passed,0.3164648711681366,,
+psnr,True,passed,8.540414561848298,,
+rmse,True,passed,0.3740927278995514,,
+ssim,True,passed,0.2357271909713745,,

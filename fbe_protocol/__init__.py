@@ -1,3 +1,3 @@
-from . import mask
+from . import mask, metrics
 
-__all__ = ["mask"]
+__all__ = ["mask", "metrics"]

@@ -133,3 +133,10 @@ copy_paste_composition_path01:
     - female
     - male
   threshold: 127
+
+# Metrics environment readiness test.
+metrics_test_path00:
+  input_dir: experiments/metrics_test/input
+  output_dir: experiments/metrics_test/output
+  reference_image: reference.png
+  prediction_image: prediction.png

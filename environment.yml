@@ -12,10 +12,15 @@ dependencies:
   - pillow
   - pyyaml
   - tqdm
+  - scikit-image>=0.20
   - pytorch
   - torchvision
   - pip:
       - openmim
+      - lpips
+      - onnx
+      - onnxruntime
+      - insightface
       - mmengine
       - xtcocotools
       - pycocotools
