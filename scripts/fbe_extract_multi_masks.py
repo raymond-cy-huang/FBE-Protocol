@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 
-from fbe_extract_mask import REPO_ROOT, extract_image, iter_images
+from fbe_extract_mask import IMAGE_EXTS, REPO_ROOT, extract_image, iter_images
 
 try:
     from tqdm import tqdm
@@ -57,6 +58,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--close", type=int, default=0)
     parser.add_argument("--erode", type=int, default=1)
     parser.add_argument("--dilate", type=int, default=1)
+    parser.add_argument("--skip-existing", action="store_true", help="Skip images whose output mask already exists.")
+    parser.add_argument("--continue-on-error", action="store_true", help="Record per-image errors and continue.")
+    parser.add_argument("--error-csv", type=Path, default=None, help="CSV path for per-image extraction errors.")
+    parser.add_argument("--recursive", action="store_true", help="Recursively collect images below input-dir.")
+    parser.add_argument(
+        "--preserve-relative",
+        action="store_true",
+        help="Preserve each image's relative parent folder below output-dir.",
+    )
+    parser.add_argument("--limit", type=int, default=None, help="Process only the first N collected images.")
     parser.add_argument(
         "--variant-px",
         type=int,
@@ -81,20 +92,73 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+def output_mask_path(image_path: Path, task_output_dir: Path, output_layout: str) -> Path:
+    image_result_dir = task_output_dir / image_path.stem if output_layout == "task" else task_output_dir
+    return image_result_dir / f"{image_path.stem}_mask.png"
+
+
+def collect_images(input_dir: Path, recursive: bool, limit: int | None) -> list[Path]:
+    if recursive and input_dir.is_dir():
+        images = sorted(p for p in input_dir.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
+    else:
+        images = iter_images(input_dir)
+    if limit is not None:
+        if limit < 1:
+            raise ValueError("--limit must be greater than 0.")
+        images = images[:limit]
+    return images
+
+
+def image_output_dir(image_path: Path, input_dir: Path, task_output_dir: Path, args: argparse.Namespace) -> Path:
+    if not args.preserve_relative or not input_dir.is_dir():
+        return task_output_dir
+    relative_parent = image_path.parent.relative_to(input_dir)
+    return task_output_dir / relative_parent
+
+
+def append_error(path: Path, image_path: Path, exc: Exception) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists() or path.stat().st_size == 0
+    with path.open("a", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["image_name", "status", "error"])
+        if write_header:
+            writer.writeheader()
+        writer.writerow(
+            {
+                "image_name": image_path.name,
+                "status": "failed",
+                "error": f"{type(exc).__name__}: {exc}",
+            }
+        )
+
+
 def main() -> None:
     args = parse_args()
     task_output_dir = args.output_dir / TASK_NAME if args.output_layout == "task" else args.output_dir
-    images = iter_images(args.input_dir)
+    images = collect_images(args.input_dir, args.recursive, args.limit)
     if not images:
         raise ValueError(f"No images found in: {args.input_dir}")
 
     print(f"[INFO] Input : {args.input_dir}")
     print(f"[INFO] Output: {task_output_dir}")
     print(f"[INFO] Mode  : {args.output_mode}")
+    print(f"[INFO] Recursive: {args.recursive}")
+    print(f"[INFO] Preserve relative folders: {args.preserve_relative}")
     print(f"[INFO] Total : {len(images)} images")
+    error_csv = args.error_csv or (task_output_dir / "extraction_errors.csv")
     for image_path in tqdm(images, desc="Extracting masks", unit="image"):
-        tqdm.write(f"[INFO] Processing {image_path.name}")
-        extract_image(image_path, task_output_dir, args)
+        current_output_dir = image_output_dir(image_path, args.input_dir, task_output_dir, args)
+        if args.skip_existing and output_mask_path(image_path, current_output_dir, args.output_layout).exists():
+            tqdm.write(f"[SKIP] Existing mask -> {image_path.relative_to(args.input_dir) if args.input_dir.is_dir() else image_path.name}")
+            continue
+        tqdm.write(f"[INFO] Processing {image_path.relative_to(args.input_dir) if args.input_dir.is_dir() else image_path.name}")
+        try:
+            extract_image(image_path, current_output_dir, args)
+        except Exception as exc:
+            if not args.continue_on_error:
+                raise
+            tqdm.write(f"[WARN] Failed {image_path.name}: {type(exc).__name__}: {exc}")
+            append_error(error_csv, image_path, exc)
 
 
 if __name__ == "__main__":
