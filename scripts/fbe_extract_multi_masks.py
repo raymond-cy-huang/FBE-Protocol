@@ -5,9 +5,54 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
+import subprocess
+import sys
 from pathlib import Path
 
+CONDA_ENV_NAME = os.environ.get("FBE_CONDA_ENV", "fbe-protocol")
+
+
+def maybe_reexec_in_conda() -> None:
+    if os.environ.get("FBE_PROTOCOL_NO_CONDA_REEXEC") == "1":
+        return
+    if os.environ.get("CONDA_DEFAULT_ENV") == CONDA_ENV_NAME:
+        return
+
+    env_python_candidates = [
+        Path.home() / f"miniconda3/envs/{CONDA_ENV_NAME}/bin/python",
+        Path.home() / f"anaconda3/envs/{CONDA_ENV_NAME}/bin/python",
+    ]
+    env_python = next((p for p in env_python_candidates if p.exists()), None)
+    if env_python is not None:
+        env = {
+            **os.environ,
+            "FBE_PROTOCOL_NO_CONDA_REEXEC": "1",
+            "CONDA_DEFAULT_ENV": CONDA_ENV_NAME,
+        }
+        os.execve(str(env_python), [str(env_python), str(Path(__file__).resolve()), *sys.argv[1:]], env)
+
+    conda_exe = os.environ.get("CONDA_EXE")
+    candidates = [
+        Path(conda_exe) if conda_exe else None,
+        Path.home() / "miniconda3/bin/conda",
+        Path.home() / "anaconda3/bin/conda",
+    ]
+    conda_path = next((p for p in candidates if p is not None and p.exists()), None)
+    if conda_path is None:
+        return
+
+    env = {**os.environ, "FBE_PROTOCOL_NO_CONDA_REEXEC": "1"}
+    cmd = [str(conda_path), "run", "-n", CONDA_ENV_NAME, "python", str(Path(__file__).resolve()), *sys.argv[1:]]
+    completed = subprocess.run(cmd, env=env)
+    raise SystemExit(completed.returncode)
+
+
+if __name__ == "__main__":
+    maybe_reexec_in_conda()
+
 from fbe_extract_mask import IMAGE_EXTS, REPO_ROOT, extract_image, iter_images
+from fbe_extract_mask import DEFAULT_MASK_MODEL_CONFIG
 
 try:
     from tqdm import tqdm
@@ -53,6 +98,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-layout", choices=("task", "direct"), default=None)
     parser.add_argument("--output-mode", choices=("full", "mask_only"), default=None)
     parser.add_argument("--bbox-dir", type=Path, default=REPO_ROOT / "models/BBoxMaskPose")
+    parser.add_argument("--mask-model-config", type=Path, default=DEFAULT_MASK_MODEL_CONFIG)
+    parser.add_argument("--mask-model", choices=("bbox_mask_pose", "sam", "sam2"), default=None)
     parser.add_argument("--invert", action="store_true")
     parser.add_argument("--open", type=int, default=0)
     parser.add_argument("--close", type=int, default=0)

@@ -20,6 +20,8 @@ FBE-Protocol/
 +-- images/                       # Default local input images
 +-- models/
 |   +-- BBoxMaskPose/             # Raw mask generator
+|   +-- sam/                      # SAM source tree
+|   +-- sam2/                     # SAM2 source tree
 +-- results/                      # Default generated outputs
 +-- scripts/
 |   +-- fbe_extract_mask.py       # Single-image mask extraction
@@ -45,8 +47,9 @@ bash setup.sh
    `mmengine`, `mmcv==2.1.0`, `mmdet==3.3.0`, and `mmpretrain==1.2.0`.
 3. Installs BBoxMaskPose runtime dependencies.
 4. Installs optional metric dependencies for LPIPS and ID similarity.
-5. Downloads SAM checkpoints into:
-   `models/BBoxMaskPose/models/SAM/`
+5. Downloads raw-mask model checkpoints into:
+   `models/BBoxMaskPose/models/SAM/`, `models/sam/checkpoints/`, and
+   `models/sam2/checkpoints/`.
 
 The default environment name is `fbe-protocol`.
 
@@ -69,16 +72,27 @@ FBE_SETUP_RETRIES=5 bash setup.sh
 
 ## Model Checkpoints
 
-The setup script downloads these SAM checkpoints when any of them are missing:
+The setup script downloads these raw-mask checkpoints when any of them are missing:
 
 ```text
 models/BBoxMaskPose/models/SAM/sam2.1_hiera_tiny.pt
 models/BBoxMaskPose/models/SAM/sam2.1_hiera_small.pt
 models/BBoxMaskPose/models/SAM/sam2.1_hiera_base_plus.pt
 models/BBoxMaskPose/models/SAM/sam2.1_hiera_large.pt
+models/sam/checkpoints/sam_vit_b_01ec64.pth
+models/sam/checkpoints/sam_vit_l_0b3195.pth
+models/sam/checkpoints/sam_vit_h_4b8939.pth
+models/sam2/checkpoints/sam2.1_hiera_tiny.pt
+models/sam2/checkpoints/sam2.1_hiera_small.pt
+models/sam2/checkpoints/sam2.1_hiera_base_plus.pt
+models/sam2/checkpoints/sam2.1_hiera_large.pt
 ```
 
 If the checkpoints already exist, `setup.sh` skips the download.
+
+The active raw-mask backend is configured in `configs/mask_model.yaml`.
+The default is `bbox_mask_pose`; valid values are `bbox_mask_pose`, `sam`, and
+`sam2`.
 
 ## Run Scripts
 
@@ -104,6 +118,12 @@ python scripts/fbe_extract_mask.py images/15881.png \
   --output-dir results \
   --output-layout task \
   --output-mode full
+```
+
+Override the configured raw-mask backend for a run:
+
+```bash
+python scripts/fbe_extract_mask.py images/15881.png --mask-model sam2
 ```
 
 `--output-layout task` writes task/image subfolders.

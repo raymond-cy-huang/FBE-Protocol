@@ -4,15 +4,8 @@ set -euo pipefail
 ENV_NAME="${FBE_CONDA_ENV:-fbe-protocol}"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ROOT_DIR}/environment.yml"
-CKPT_SCRIPT="${ROOT_DIR}/models/BBoxMaskPose/models/SAM/download_ckpts.sh"
-CKPT_DIR="$(dirname "${CKPT_SCRIPT}")"
+MODEL_WEIGHTS_SCRIPT="${ROOT_DIR}/download_all_models_weights.sh"
 RETRIES="${FBE_SETUP_RETRIES:-3}"
-SAM_CHECKPOINTS=(
-  "sam2.1_hiera_tiny.pt"
-  "sam2.1_hiera_small.pt"
-  "sam2.1_hiera_base_plus.pt"
-  "sam2.1_hiera_large.pt"
-)
 OPENMMLAB_PACKAGES=(
   "mmengine"
   "mmcv==2.1.0"
@@ -121,37 +114,20 @@ install_bbox_runtime_deps() {
     "${CONDA_EXE}" run -n "${ENV_NAME}" python -m pip install "${BBOX_RUNTIME_PACKAGES[@]}"
 }
 
-download_sam_checkpoints() {
-  if [[ ! -f "${CKPT_SCRIPT}" ]]; then
-    echo "[ERROR] Missing checkpoint downloader: ${CKPT_SCRIPT}" >&2
+download_model_weights() {
+  if [[ ! -f "${MODEL_WEIGHTS_SCRIPT}" ]]; then
+    echo "[ERROR] Missing model weights downloader: ${MODEL_WEIGHTS_SCRIPT}" >&2
     return 1
   fi
 
-  local missing=0
-  local ckpt
-  for ckpt in "${SAM_CHECKPOINTS[@]}"; do
-    if [[ ! -s "${CKPT_DIR}/${ckpt}" ]]; then
-      missing=1
-      break
-    fi
-  done
-
-  if [[ "${missing}" -eq 0 ]]; then
-    info "SAM checkpoints already exist in ${CKPT_DIR}; skipping download."
-    return 0
-  fi
-
-  chmod +x "${CKPT_SCRIPT}"
-  (
-    cd "${CKPT_DIR}"
-    run_with_retries "Downloading SAM checkpoints" bash "${CKPT_SCRIPT}"
-  )
+  chmod +x "${MODEL_WEIGHTS_SCRIPT}"
+  run_with_retries "Downloading all model weights" bash "${MODEL_WEIGHTS_SCRIPT}"
 }
 
 setup_conda_env
 install_openmmlab_deps
 install_bbox_runtime_deps
-download_sam_checkpoints
+download_model_weights
 
 info "Setup complete."
 info "Run conda activate ${ENV_NAME} to start using the environment."

@@ -51,7 +51,8 @@ def maybe_reexec_in_conda() -> None:
     raise SystemExit(completed.returncode)
 
 
-maybe_reexec_in_conda()
+if Path(sys.argv[0]).resolve() == Path(__file__).resolve():
+    maybe_reexec_in_conda()
 
 import cv2
 import numpy as np
@@ -62,6 +63,7 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
 SCRIPT_NAME = Path(__file__).stem
 DEFAULT_RESULT_DIR = REPO_ROOT / "results" / SCRIPT_NAME
+DEFAULT_MASK_MODEL_CONFIG = REPO_ROOT / "configs/mask_model.yaml"
 
 
 def iter_images(path: Path) -> list[Path]:
@@ -114,6 +116,134 @@ def run_bbox_mask_pose(image_path: Path, image_result_dir: Path, bbox_dir: Path)
     if not mask_path.exists():
         raise FileNotFoundError(f"Expected mask was not produced: {mask_path}")
     return mask_path
+
+
+def read_mask_model_config(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {"active_model": "bbox_mask_pose", "models": {}}
+    try:
+        import yaml
+    except ImportError as exc:
+        raise SystemExit("PyYAML is required to read configs/mask_model.yaml. Run `bash setup.sh`.") from exc
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Mask model config must be a YAML object: {path}")
+    return data
+
+
+def resolve_repo_path(value: object) -> Path:
+    path = Path(str(value))
+    if not path.is_absolute():
+        path = REPO_ROOT / path
+    return path
+
+
+def selected_mask_model(args: argparse.Namespace) -> tuple[str, dict[str, object]]:
+    config = read_mask_model_config(args.mask_model_config)
+    model_name = args.mask_model or str(config.get("active_model", "bbox_mask_pose"))
+    models = config.get("models", {})
+    if not isinstance(models, dict):
+        raise ValueError(f"`models` must be a YAML object in {args.mask_model_config}")
+
+    section = models.get(model_name, {})
+    if not isinstance(section, dict):
+        available = ", ".join(sorted(str(k) for k in models)) or "<none>"
+        raise ValueError(f"Unknown mask model `{model_name}`. Available: {available}")
+    return model_name, section
+
+
+def _torch_device(section: dict[str, object]) -> str:
+    if section.get("device"):
+        return str(section["device"])
+
+    import torch
+
+    return "cuda" if torch.cuda.is_available() else "cpu"
+
+
+def _read_rgb_image(image_path: Path) -> np.ndarray:
+    image_bgr = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if image_bgr is None:
+        raise ValueError(f"Cannot read image: {image_path}")
+    return cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+
+
+def _select_largest_mask(masks: list[dict[str, object]], backend: str) -> np.ndarray:
+    if not masks:
+        raise RuntimeError(f"{backend} did not produce any masks.")
+    largest = max(masks, key=lambda item: int(item.get("area", 0)))
+    segmentation = largest.get("segmentation")
+    if segmentation is None:
+        raise RuntimeError(f"{backend} produced a mask without `segmentation`.")
+    return np.asarray(segmentation).astype(np.uint8) * 255
+
+
+def _write_generated_mask(mask: np.ndarray, image_path: Path, image_result_dir: Path, suffix: str) -> Path:
+    image_result_dir.mkdir(parents=True, exist_ok=True)
+    mask_path = image_result_dir / f"{image_path.stem}_{suffix}.png"
+    write_image(mask_path, mask)
+    return mask_path
+
+
+def run_sam(image_path: Path, image_result_dir: Path, section: dict[str, object]) -> Path:
+    root = resolve_repo_path(section.get("root", "models/sam"))
+    checkpoint = resolve_repo_path(section.get("checkpoint", "models/sam/checkpoints/sam_vit_b_01ec64.pth"))
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Missing SAM checkpoint: {checkpoint}. Run `bash setup.sh`.")
+
+    sys.path.insert(0, str(root))
+    from segment_anything import SamAutomaticMaskGenerator, sam_model_registry
+
+    model_type = str(section.get("model_type", "vit_b"))
+    generator_args = section.get("generator_args", {})
+    if not isinstance(generator_args, dict):
+        raise ValueError("SAM generator_args must be a YAML object.")
+
+    sam = sam_model_registry[model_type](checkpoint=str(checkpoint))
+    sam.to(device=_torch_device(section))
+    mask_generator = SamAutomaticMaskGenerator(sam, **generator_args)
+    mask = _select_largest_mask(mask_generator.generate(_read_rgb_image(image_path)), "SAM")
+    return _write_generated_mask(mask, image_path, image_result_dir, "sam_raw_mask")
+
+
+def run_sam2(image_path: Path, image_result_dir: Path, section: dict[str, object]) -> Path:
+    root = resolve_repo_path(section.get("root", "models/sam2"))
+    checkpoint = resolve_repo_path(section.get("checkpoint", "models/sam2/checkpoints/sam2.1_hiera_tiny.pt"))
+    if not checkpoint.exists():
+        raise FileNotFoundError(f"Missing SAM2 checkpoint: {checkpoint}. Run `bash setup.sh`.")
+
+    sys.path.insert(0, str(root))
+    from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
+    from sam2.build_sam import build_sam2
+
+    generator_args = section.get("generator_args", {})
+    if not isinstance(generator_args, dict):
+        raise ValueError("SAM2 generator_args must be a YAML object.")
+
+    model = build_sam2(
+        str(section.get("model_cfg", "configs/sam2.1/sam2.1_hiera_t.yaml")),
+        str(checkpoint),
+        device=_torch_device(section),
+    )
+    mask_generator = SAM2AutomaticMaskGenerator(model, **generator_args)
+    mask = _select_largest_mask(mask_generator.generate(_read_rgb_image(image_path)), "SAM2")
+    return _write_generated_mask(mask, image_path, image_result_dir, "sam2_raw_mask")
+
+
+def run_raw_mask_generator(image_path: Path, image_result_dir: Path, args: argparse.Namespace) -> Path:
+    model_name, section = selected_mask_model(args)
+    model_type = str(section.get("type", model_name))
+    if model_type == "bbox_mask_pose":
+        bbox_dir = resolve_repo_path(section.get("root", args.bbox_dir))
+        if args.bbox_dir != REPO_ROOT / "models/BBoxMaskPose":
+            bbox_dir = args.bbox_dir
+        return run_bbox_mask_pose(image_path, image_result_dir, bbox_dir)
+    if model_type == "sam":
+        return run_sam(image_path, image_result_dir, section)
+    if model_type == "sam2":
+        return run_sam2(image_path, image_result_dir, section)
+    raise ValueError(f"Unsupported mask model type: {model_type}")
 
 
 def write_image(path: Path, img: np.ndarray) -> None:
@@ -174,7 +304,7 @@ def extract_from_mask_file(
 def extract_image(image_path: Path, output_dir: Path, args: argparse.Namespace) -> None:
     output_layout = getattr(args, "output_layout", "task")
     image_result_dir = output_dir / image_path.stem if output_layout == "task" else output_dir
-    generated_mask = run_bbox_mask_pose(image_path, image_result_dir, args.bbox_dir)
+    generated_mask = run_raw_mask_generator(image_path, image_result_dir, args)
     extract_from_mask_file(generated_mask, image_result_dir, args, image_path=image_path)
     generated_mask.unlink(missing_ok=True)
 
@@ -189,6 +319,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-layout", choices=("task", "direct"), default="task")
     parser.add_argument("--output-mode", choices=("full", "mask_only"), default="full")
     parser.add_argument("--bbox-dir", type=Path, default=REPO_ROOT / "models/BBoxMaskPose")
+    parser.add_argument("--mask-model-config", type=Path, default=DEFAULT_MASK_MODEL_CONFIG)
+    parser.add_argument("--mask-model", choices=("bbox_mask_pose", "sam", "sam2"), default=None)
     parser.add_argument("--invert", action="store_true")
     parser.add_argument("--open", type=int, default=0)
     parser.add_argument("--close", type=int, default=0)

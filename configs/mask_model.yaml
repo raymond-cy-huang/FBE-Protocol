@@ -1,0 +1,46 @@
+# Select the backend used to generate raw masks before normalization.
+# Options: bbox_mask_pose, sam, sam2.
+active_model: bbox_mask_pose
+
+models:
+  bbox_mask_pose:
+    type: bbox_mask_pose
+    root: models/BBoxMaskPose
+    entrypoint: create_raw_mask.py
+    checkpoints_dir: models/BBoxMaskPose/models/SAM
+    checkpoints:
+      - sam2.1_hiera_tiny.pt
+      - sam2.1_hiera_small.pt
+      - sam2.1_hiera_base_plus.pt
+      - sam2.1_hiera_large.pt
+
+  sam:
+    type: sam
+    root: models/sam
+    model_type: vit_b
+    checkpoint: models/sam/checkpoints/sam_vit_b_01ec64.pth
+    available_checkpoints:
+      vit_b: models/sam/checkpoints/sam_vit_b_01ec64.pth
+      vit_l: models/sam/checkpoints/sam_vit_l_0b3195.pth
+      vit_h: models/sam/checkpoints/sam_vit_h_4b8939.pth
+    generator_args: {}
+
+  sam2:
+    type: sam2
+    root: models/sam2
+    model_cfg: configs/sam2.1/sam2.1_hiera_t.yaml
+    checkpoint: models/sam2/checkpoints/sam2.1_hiera_tiny.pt
+    available_checkpoints:
+      tiny:
+        model_cfg: configs/sam2.1/sam2.1_hiera_t.yaml
+        checkpoint: models/sam2/checkpoints/sam2.1_hiera_tiny.pt
+      small:
+        model_cfg: configs/sam2.1/sam2.1_hiera_s.yaml
+        checkpoint: models/sam2/checkpoints/sam2.1_hiera_small.pt
+      base_plus:
+        model_cfg: configs/sam2.1/sam2.1_hiera_b+.yaml
+        checkpoint: models/sam2/checkpoints/sam2.1_hiera_base_plus.pt
+      large:
+        model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
+        checkpoint: models/sam2/checkpoints/sam2.1_hiera_large.pt
+    generator_args: {}

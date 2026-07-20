@@ -9,7 +9,20 @@ qbdg.txt
 
 # Large model artifacts and generated documents
 *.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+*.onnx
 *.pdf
+
+# Downloaded model checkpoints. Keep downloader scripts tracked.
+/models/BBoxMaskPose/models/SAM/*
+!/models/BBoxMaskPose/models/SAM/download_ckpts.sh
+/models/sam/checkpoints/*
+!/models/sam/checkpoints/download_ckpts.sh
+/models/sam2/checkpoints/*
+!/models/sam2/checkpoints/download_ckpts.sh
 
 # Python bytecode and native extensions
 __pycache__/
